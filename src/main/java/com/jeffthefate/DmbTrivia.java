@@ -70,6 +70,7 @@ public class DmbTrivia {
 	private static final int TRIVIA_MAIN_FONT_SIZE = 30;
 	private static final int TRIVIA_DATE_FONT_SIZE = TRIVIA_MAIN_FONT_SIZE - 10;
 	private static final int LEADERS_LIMIT = 10;
+	private static final int LEADERS_VERTICAL_OFFSET = 80;
 	private static final int PRE_SHOW_TIME = (15 * 60 * 1000);
 
 	private static ArrayList<ArrayList<String>> nameMap = new ArrayList<ArrayList<String>>(
@@ -155,7 +156,8 @@ public class DmbTrivia {
 		logger.info("dev: " + isDev);
 		trivia = new Trivia(SETLIST_JPG_FILENAME, ROBOTO_FONT_FILENAME,
 				LEADERS_TITLE, TRIVIA_MAIN_FONT_SIZE, TRIVIA_DATE_FONT_SIZE,
-				LEADERS_LIMIT, tweetConfig, questionCount, bonusCount, nameMap,
+				LEADERS_LIMIT, LEADERS_VERTICAL_OFFSET, tweetConfig,
+				questionCount, bonusCount, nameMap,
 				acronymMap, replaceList, tipList, isDev, PRE_TEXT,
 				lightningCount);
 		twitterStream = new TwitterStreamFactory(tweetConfig).getInstance();
