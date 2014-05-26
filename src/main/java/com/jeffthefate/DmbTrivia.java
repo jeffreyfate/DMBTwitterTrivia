@@ -378,10 +378,10 @@ public class DmbTrivia {
 			if ((dm.getSenderScreenName().equalsIgnoreCase("copperpot5") || dm
 					.getSenderScreenName().equalsIgnoreCase("jeffthefate"))) {
 				triggerUsername = dm.getSenderScreenName();
-				if (dmText.toLowerCase(Locale.getDefault()).contains(
-						"start trivia")) {
-					if (dmText.toLowerCase(Locale.getDefault())
-							.contains("skip")) {
+				String massagedText = dm.getText().toLowerCase(
+						Locale.getDefault()); 
+				if (massagedText.contains("start trivia")) {
+					if (massagedText.contains("skip")) {
 						doWarning = false;
 					} else {
 						doWarning = true;
@@ -416,7 +416,9 @@ public class DmbTrivia {
 							+ trivia.getLightningCount() + ", "
 							+ trivia.getBonusCount();
 					triviaStarted = true;
-				} else {
+				} else if (!massagedText.contains("end setlist") &&
+						!massagedText.contains("final scores") &&
+						!massagedText.contains("current scores")) {
 					triggerResponse = "Unrecognized command! Valid command: "
 							+ "start trivia [skip] {QUESTIONS} {LIGHTNING} "
 							+ "{BONUS}";
