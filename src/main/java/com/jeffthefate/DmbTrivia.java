@@ -1,38 +1,21 @@
 package com.jeffthefate;
 
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Locale;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
+import com.jeffthefate.setlist.Setlist;
+import com.jeffthefate.utils.GameUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.DailyRollingFileAppender;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PatternLayout;
-
-import com.jeffthefate.setlist.Setlist;
-
-import twitter4j.DirectMessage;
-import twitter4j.FilterQuery;
-import twitter4j.RateLimitStatusEvent;
-import twitter4j.RateLimitStatusListener;
-import twitter4j.StallWarning;
-import twitter4j.Status;
-import twitter4j.StatusDeletionNotice;
-import twitter4j.Twitter;
-import twitter4j.TwitterException;
-import twitter4j.TwitterFactory;
-import twitter4j.TwitterStream;
-import twitter4j.TwitterStreamFactory;
-import twitter4j.User;
-import twitter4j.UserList;
-import twitter4j.UserStreamListener;
+import twitter4j.*;
 import twitter4j.conf.Configuration;
 import twitter4j.conf.ConfigurationBuilder;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Hello world!
@@ -73,6 +56,11 @@ public class DmbTrivia {
 	private static String CURR_ACCESS_SECRET = PROD_ACCESS_SECRET;
 	private static String CURR_ACCOUNT = PROD_ACCOUNT;
 
+    private static final String PARSE_APP_ID =
+            "ImI8mt1EM3NhZNRqYZOyQpNSwlfsswW73mHsZV3R";
+    private static final String PARSE_REST_KEY =
+            "1smRSlfAvbFg4AsDxat1yZ3xknHQbyhzZ4msAi5w";
+
 	private static final String SETLIST_DIR = "/home/SETLISTS/";
     private static final String SETLIST_FILENAME = SETLIST_DIR + "setlist";
     private static final String SETLIST_FILENAME_DEV = SETLIST_DIR +
@@ -85,6 +73,7 @@ public class DmbTrivia {
 	private static final String SETLIST_JPG_FILENAME = "/home/setlist.jpg";
 	private static final String ROBOTO_FONT_FILENAME = "/home/roboto.ttf";
 	private static final String BAN_FILE = "/home/banlist.ser";
+    private static final String SCREENSHOT_FILENAME = "/home/TEMP/scores";
 	
 	private static final String PRE_SHOW_PRE_TEXT = "[#DMB Trivia] ";
 	private static final String PRE_TEXT = "[DMB Trivia] ";
@@ -92,18 +81,20 @@ public class DmbTrivia {
 	private static final String PRE_SHOW_TEXT = "Game starts on @dmbtrivia2 in 15 minutes";
 
 	private static final int SETLIST_FONT_SIZE = 60;
-    private static final int SETLIST_VERTICAL_OFFSET = 180;
+    private static final int SETLIST_TOP_OFFSET = 180;
+    private static final int SETLIST_BOTTOM_OFFSET = 60;
 	
 	private static final int TRIVIA_MAIN_FONT_SIZE = 60;
 	private static final int TRIVIA_DATE_FONT_SIZE = TRIVIA_MAIN_FONT_SIZE - 30;
 	private static final int LEADERS_LIMIT = 10;
-	private static final int LEADERS_VERTICAL_OFFSET = 200;
+	private static final int SCORES_TOP_OFFSET = 200;
+    private static final int SCORES_BOTTOM_OFFSET = 40;
 	private static final int PRE_SHOW_TIME = (15 * 60 * 1000);
 	
 	private static Setlist setlist;
     
-    private static ArrayList<ArrayList<String>> songList = new ArrayList<ArrayList<String>>(0);
-	private static ArrayList<String> symbolList = new ArrayList<String>(0);
+    private static ArrayList<ArrayList<String>> songList;
+	private static ArrayList<String> symbolList;
 
 	private static ArrayList<ArrayList<String>> nameMap = new ArrayList<ArrayList<String>>(
 			0);
@@ -196,7 +187,9 @@ public class DmbTrivia {
 		 */
 		// Setup to start
 		setupAnswerMap();
-		setupSongList();
+        GameUtil gameUtil = GameUtil.instance();
+        songList = gameUtil.generateSongMatchList();
+        symbolList = gameUtil.generateSymbolList();
 		Configuration setlistTweetConfig = setupTweet(false);
 		Configuration gameTweetConfig = setupTweet(true);
 		logger.info("Setup params:");
@@ -206,17 +199,19 @@ public class DmbTrivia {
 		logger.info("dev: " + isDev);
 		trivia = new Trivia(SETLIST_JPG_FILENAME, ROBOTO_FONT_FILENAME,
 				LEADERS_TITLE, TRIVIA_MAIN_FONT_SIZE, TRIVIA_DATE_FONT_SIZE,
-				LEADERS_LIMIT, LEADERS_VERTICAL_OFFSET, gameTweetConfig,
-				questionCount, bonusCount, nameMap,
+				LEADERS_LIMIT, SCORES_TOP_OFFSET, SCORES_BOTTOM_OFFSET,
+                gameTweetConfig, questionCount, bonusCount, nameMap,
 				acronymMap, replaceList, tipList, isDev, PRE_TEXT,
-				lightningCount);
+				lightningCount, SCREENSHOT_FILENAME, PARSE_APP_ID,
+                PARSE_REST_KEY);
 		// TODO Add url and isDev parameters to DM
 		setlist = new Setlist(null, isDev, setlistTweetConfig, gameTweetConfig,
 				SETLIST_JPG_FILENAME, ROBOTO_FONT_FILENAME,
-				SETLIST_FONT_SIZE, SETLIST_VERTICAL_OFFSET,
+				SETLIST_FONT_SIZE, SETLIST_TOP_OFFSET, SETLIST_BOTTOM_OFFSET,
 				isDev ? SETLIST_FILENAME_DEV : SETLIST_FILENAME,
 				isDev ? LAST_SONG_FILENAME_DEV : LAST_SONG_FILENAME,
-				SETLIST_DIR, BAN_FILE, songList, symbolList, TRIVIA2_ACCOUNT);
+				SETLIST_DIR, BAN_FILE, songList, symbolList, TRIVIA2_ACCOUNT,
+                PARSE_APP_ID, PARSE_REST_KEY, "setlist", "scores");
 		twitterStream = new TwitterStreamFactory(gameTweetConfig).getInstance();
 		twitterStream.addRateLimitStatusListener(new RateLimitStatusListener() {
 			public void onRateLimitReached(RateLimitStatusEvent event) {
@@ -292,428 +287,6 @@ public class DmbTrivia {
 		  .setOAuthAccessTokenSecret(isGame ? TRIVIA2_ACCESS_SECRET : CURR_ACCESS_SECRET);
 		return cb.build();
     }
-	
-	private static void setupSongList() {
-		ArrayList<String> tempList = new ArrayList<String>(0);
-    	tempList.add("belly belly nice");
-    	tempList.add("bbn");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("the riff");
-    	tempList.add("riff");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("true");
-    	tempList.add("true reflections");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("dido");
-    	tempList.add("drive in drive out");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("lyd");
-    	tempList.add("let you down");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("liog");
-    	tempList.add("lie in our graves");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("proudest");
-    	tempList.add("pm");
-    	tempList.add("proudest monkey");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("smts");
-    	tempList.add("so much to say");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("billies");
-    	tempList.add("tripping billies");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("byah");
-    	tempList.add("build you a house");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("ggt");
-    	tempList.add("good good time");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("ioy");
-    	tempList.add("idea of you");
-    	tempList.add("the idea of you");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("ktk");
-    	tempList.add("kill the king");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("lw");
-    	tempList.add("loving wings");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("suad");
-    	tempList.add("sweet up and down");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("astb");
-    	tempList.add("anyone seen the bridge");
-    	tempList.add("anyone seen the bridge?");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("wwbom");
-    	tempList.add("what will become of me");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("ftwii");
-    	tempList.add("funny");
-    	tempList.add("funny the way it is");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("lithog");
-    	tempList.add("lying in the hands of god");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("smlam");
-    	tempList.add("shake me like a monkey");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("wia");
-    	tempList.add("why i am");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("you & me");
-    	tempList.add("you and me");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("bef");
-    	tempList.add("big eyed fish");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("dad");
-    	tempList.add("digging a ditch");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("gig");
-    	tempList.add("grace is gone");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("kkj");
-    	tempList.add("kit kat jam");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("wayg");
-    	tempList.add("where are you going");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("ynk");
-    	tempList.add("you never know");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("ants");
-    	tempList.add("ants marching");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("bowa");
-    	tempList.add("best of what's around");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("jimi");
-    	tempList.add("jimi thing");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("lld");
-    	tempList.add("lover lay down");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("pfwyg");
-    	tempList.add("pay for what you get");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("rhyme");
-    	tempList.add("rhyme & reason");
-    	tempList.add("rhyme and reason");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("typical");
-    	tempList.add("typical situation");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("wwys");
-    	tempList.add("what would you say");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("dftr");
-    	tempList.add("reaper");
-    	tempList.add("the reaper");
-    	tempList.add("don't fear the reaper");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("afm");
-    	tempList.add("angel from montgomery");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("bdth");
-    	tempList.add("burning down the house");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("cortez");
-    	tempList.add("cortez the killer");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("dbtr");
-    	tempList.add("down by the river");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("fitr");
-    	tempList.add("fool in the rain");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("ftbow");
-    	tempList.add("for the beauty of wynona");
-    	tempList.add("beauty of wynona");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("fhtsa");
-    	tempList.add("funny how time slips away");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("gtbt");
-    	tempList.add("good times bad times");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("hhmm");
-    	tempList.add("hey hey my my");
-    	tempList.add("hey hey my my into the black");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("maker");
-    	tempList.add("the maker");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("lbv");
-    	tempList.add("long black veil");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("majdbts");
-    	tempList.add("me and julio down by the schoolyard");
-    	tempList.add("me and julio");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("needle and the damage down");
-    	tempList.add("the needle and the damage done");
-    	tempList.add("tnatdd");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("siu");
-    	tempList.add("stir it up");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("thank you");
-    	tempList.add("thank you falettinme be mice elf agin");
-    	tempList.add("tyfbmea");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("tots");
-    	tempList.add("time of the season");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("abi");
-    	tempList.add("american baby intro");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("ewu");
-    	tempList.add("everybody wake up");
-    	tempList.add("everybody wake up (our finest hour arrives)");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("bayou");
-    	tempList.add("louisiana bayou");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("odh");
-    	tempList.add("old dirt hill");
-    	tempList.add("old dirt hill (bring that beat back)");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("oomh");
-    	tempList.add("out of my hands");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("stand up");
-    	tempList.add("stand up (for it)");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("steady");
-    	tempList.add("steady as we go");
-    	tempList.add("sawg");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("stolen");
-    	tempList.add("stolen away");
-    	tempList.add("stolen away on 55th & 3rd");
-    	tempList.add("stolen away on 55th and 3rd");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("ymdt");
-    	tempList.add("die trying");
-    	tempList.add("you might die trying");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("dreams of our fathers");
-    	tempList.add("doof");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("ftt");
-    	tempList.add("fool to think");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("idi");
-    	tempList.add("i did it");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("iihia");
-    	tempList.add("if i had it all");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("stdh");
-    	tempList.add("sleep to dream her");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("tsb");
-    	tempList.add("the space between");
-    	tempList.add("space between");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("wya");
-    	tempList.add("what you are");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("wtwe");
-    	tempList.add("when the world ends");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("ibyu");
-    	tempList.add("i'll back you up");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("osw");
-    	tempList.add("one sweet world");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("stjl");
-    	tempList.add("tstjl");
-    	tempList.add("song that jane likes");
-    	tempList.add("the song that jane likes");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("loml");
-    	tempList.add("love of my life");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("gbe");
-    	tempList.add("grey blue eyes");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("sdl");
-    	tempList.add("so damn lucky");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("stay or leave");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("too high");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("uaa");
-    	tempList.add("up and away");
-    	tempList.add("up & away");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("ddtw");
-    	tempList.add("don't drink the water");
-    	tempList.add("don't drink");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("dreaming tree");
-    	tempList.add("the dreaming tree");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("the last stop");
-    	tempList.add("last stop");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("pnp");
-    	tempList.add("pantala naga pampa");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("stay");
-    	tempList.add("stay (wasting time)");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("stone");
-    	tempList.add("the stone");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("crash");
-    	tempList.add("crash into me");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("hunger");
-    	tempList.add("hunger for the great light");
-    	tempList.add("hftgl");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("nancies");
-    	tempList.add("dancing nancies");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("corn bread");
-    	tempList.add("cornbread");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("help myself");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("joyride");
-    	tempList.add("joy ride");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("lrb");
-    	tempList.add("little red bird");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("write a song");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("watchtower");
-    	tempList.add("all along the watchtower");
-    	tempList.add("aatw");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("sugarman");
-    	tempList.add("sugar man");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("dreamgirl");
-    	tempList.add("dream girl");
-    	songList.add(tempList);
-    	tempList = new ArrayList<String>(0);
-    	tempList.add("#36");
-    	tempList.add("#36 jam");
-    	tempList.add("36");
-    	tempList.add("36 jam");
-    	songList.add(tempList);
-    	symbolList.add("*");
-		symbolList.add("+");
-    	symbolList.add("~");
-    	symbolList.add("^");
-    	symbolList.add("§");
-    	symbolList.add("¤");
-    	symbolList.add("$");
-    	symbolList.add("%");
-	}
 
 	private static void setupAnswerMap() {
 		ArrayList<String> tempList = new ArrayList<String>(0);
@@ -838,7 +411,9 @@ public class DmbTrivia {
 		replaceList.add("the ");
 		replaceList.add("his ");
 		replaceList.add("her ");
-		tipList.add("Scoring: #1 - Full points, #2 - 3/4 points, #4 - 1/2 points\nIf you protect tweets we must follow you to play (ask us)");
+		tipList.add("Scoring: #1 - Full points, #2 - 3/4 points, " +
+                "#3 - 1/2 points\nIf you protect tweets we must follow you to" +
+                " play (ask us)");
 		tipList.add("You won't see people guess who protect their tweets unless you follow each other");
 		tipList.add("Only one guess per person is accepted for each question");
 		tipList.add("Note: We have a free DMB Trivia & Setlist app in the Google Play Store https://play.google.com/store/apps/details?id=com.jeffthefate.dmbquiz");
@@ -930,6 +505,10 @@ public class DmbTrivia {
 							setlist.setDuration(countList.get(0));
 						}
 					}
+                    if (dmText.contains("test")) {
+                        setlist.setDuration(0);
+                        setlist.setUrl("/home/test2014-06-20.txt");
+                    }
 					triggerResponse = "Command received! Starting setlist: "
 							+ setlist.getDurationHours() + " hours";
 					setlistStarted = true;
@@ -943,17 +522,17 @@ public class DmbTrivia {
 							"ban", "")));
 				} else if (massagedText.contains("final scores")) {
 					if (massagedText.contains("image")) {
-						setlist.postSetlistScoresImage(setlist.FINAL_SCORES);
+						setlist.postSetlistScoresImage(true);
 					}
 					else {
-						setlist.postSetlistScoresText(setlist.FINAL_SCORES);
+						setlist.postSetlistScoresText(true);
 					}
 				} else if (massagedText.contains("current scores")) {
 					if (massagedText.contains("image")) {
-						setlist.postSetlistScoresImage(setlist.CURRENT_SCORES);
+						setlist.postSetlistScoresImage(false);
 					}
 					else {
-						setlist.postSetlistScoresText(setlist.CURRENT_SCORES);
+						setlist.postSetlistScoresText(false);
 					}
 				} else if (!massagedText.contains("end setlist") &&
 						!massagedText.contains("final scores") &&
