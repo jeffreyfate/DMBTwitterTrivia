@@ -1,47 +1,45 @@
 package com.jeffthefate;
 
-import junit.framework.Test;
+import com.jeffthefate.setlist.Setlist;
+import com.jeffthefate.utils.FileUtil;
 import junit.framework.TestCase;
-import junit.framework.TestSuite;
 
-/**
- * Unit test for simple App.
- */
-public class DmbTriviaTest 
-    extends TestCase
-{
-    /**
-     * Create the test case
-     *
-     * @param testName name of the test case
-     */
-    public DmbTriviaTest( String testName )
-    {
-        super( testName );
-    }
+import java.io.File;
+import java.util.ArrayList;
 
-    /**
-     * @return the suite of tests being tested
-     */
-    public static Test suite()
-    {
-        return new TestSuite( DmbTriviaTest.class );
-    }
+public class DmbTriviaTest extends TestCase {
 
-    /**
-     * Rigourous Test :-)
-     */
-    public void testDmbTrivia()
-    {
-    	/*
-    	String[] args = {"1", "false", "true"};
-        DmbTrivia.main(args);
-        try {
-			Thread.sleep(600000);
-		} catch (InterruptedException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		*/
+    private final String USER_DIR = System.getProperty("user.dir") +
+            File.separator + "target" + File.separator;
+    private final String SETLIST_DIR = USER_DIR + "SETLISTS" + File.separator;
+    private final String SETLIST_FILENAME = SETLIST_DIR + "setlist";
+    private final String LAST_SONG_DIR = USER_DIR + "LAST_SONG" +
+            File.separator;
+    private final String LAST_SONG_FILENAME = LAST_SONG_DIR + "last_song";
+    private final String TEST_RESOURCES = "src/test/resources/";
+    private final String TEST_RESOURCES_SET = "src/test/resources/set/";
+    private final String TEST_JPG = TEST_RESOURCES + "setlist.jpg";
+    private final String TEST_FONT = TEST_RESOURCES + "roboto.ttf";
+    private final String TEST_BAN = TEST_RESOURCES + "ban.ser";
+
+    private FileUtil fileUtil = FileUtil.instance();
+
+    public void testDmbTriviaFullSet() {
+        System.out.println(USER_DIR);
+    	// Use dev/test Parse and Twitter credentials
+        DmbTrivia dmbTrivia = new DmbTrivia(true, true);
+        // Setup app as usual for the most part
+        Setlist setlist = dmbTrivia.getSetlist();
+        setlist.setSetlistFilename(SETLIST_FILENAME);
+        setlist.setLastSongFilename(LAST_SONG_FILENAME);
+        setlist.setSetlistDir(SETLIST_DIR);
+        setlist.setSetlistJpgFilename(TEST_JPG);
+        setlist.setFontFilename(TEST_FONT);
+        setlist.setBanFile(TEST_BAN);
+        // Grab the list of test files
+        ArrayList<String> files = fileUtil.getListOfFiles(TEST_RESOURCES_SET,
+                ".txt");
+        // Cycle through each, setting the URL to the file after a wait
+        dmbTrivia.startListening(files, true);
     }
 }
