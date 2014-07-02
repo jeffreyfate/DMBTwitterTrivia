@@ -1,11 +1,9 @@
 package com.jeffthefate;
 
-import com.jeffthefate.setlist.Setlist;
 import com.jeffthefate.utils.FileUtil;
 import junit.framework.TestCase;
 
 import java.io.File;
-import java.util.ArrayList;
 
 public class DmbTriviaTest extends TestCase {
 
@@ -25,6 +23,7 @@ public class DmbTriviaTest extends TestCase {
     private FileUtil fileUtil = FileUtil.instance();
 
     public void testDmbTriviaFullSet() {
+        /*
         System.out.println(USER_DIR);
     	// Use dev/test Parse and Twitter credentials
         DmbTrivia dmbTrivia = new DmbTrivia(true, true);
@@ -41,5 +40,6 @@ public class DmbTriviaTest extends TestCase {
                 ".txt");
         // Cycle through each, setting the URL to the file after a wait
         dmbTrivia.startListening(files, true);
+        */
     }
 }

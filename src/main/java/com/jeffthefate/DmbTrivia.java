@@ -1,7 +1,11 @@
 package com.jeffthefate;
 
 import com.jeffthefate.setlist.Setlist;
+import com.jeffthefate.utils.CredentialUtil;
+import com.jeffthefate.utils.FileUtil;
 import com.jeffthefate.utils.GameUtil;
+import com.jeffthefate.utils.Parse;
+import com.jeffthefate.utils.json.JsonUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.DailyRollingFileAppender;
 import org.apache.log4j.Level;
@@ -9,7 +13,6 @@ import org.apache.log4j.Logger;
 import org.apache.log4j.PatternLayout;
 import twitter4j.*;
 import twitter4j.conf.Configuration;
-import twitter4j.conf.ConfigurationBuilder;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -22,40 +25,6 @@ import java.util.regex.Pattern;
  * 
  */
 public class DmbTrivia {
-
-    // TODO Secure credentials
-	private static final String PROD_KEY = "LG23SHRfn5E5aFld0kc9sdLEG";
-	private static final String PROD_SECRET = "EBsmiO5Aj9chSVQGElZ5falYWX02Dqw4GmdgEOekkuDHMlHGOX";
-	private static final String PROD_ACCESS_TOKEN = "611044728-ojJ9OszvvtV4ATU36JYZhhdk9BoaDfvbHFzUzqvY";
-	private static final String PROD_ACCESS_SECRET = "jrjcTJWSnzUBAaXpYXMEZazVhEHohoXlDktd9a2kM6rE5";
-	private static final String PROD_ACCOUNT = "dmbtrivia";
-	
-	private static final String DEV_KEY = "wGvroEGCqr8BrOltdbxVe6H4L";
-	private static final String DEV_SECRET = "e2NMIFguT5cBPqZtUEEPnjwqugTDhePSQsACspiQqOlVcSFTSw";
-	private static final String DEV_ACCESS_TOKEN = "1265342035-JIW0CAxWVD65KljUEvv5660fsN3TVoig6dC2fII";
-	private static final String DEV_ACCESS_SECRET = "0bnnmL3a9AAQeD4NkEqEUdtWVb8TGhdmk1SjI14QrdAMM";
-	private static final String DEV_ACCOUNT = "dmbtriviatest";
-	
-	private static final String TRIVIA2_KEY = "eMuFTZYxt3X35zhiOmnOyJuAS";
-	private static final String TRIVIA2_SECRET = "0ITfF0A1Ew6wNvJUFKpxVgF6qCdKk8nLPgluSFhsfDnvURp6Xu";
-	private static final String TRIVIA2_ACCESS_TOKEN = "2357105641-VsaREbnEYoiyi0pb3s68Ucgsr6E9iGHjQzqtctS";
-	private static final String TRIVIA2_ACCESS_SECRET = "MmsrjVpjneQnf3s8FyXfzWK98h6o8dqu5M4xsZEd4S6kv";
-	private static final String TRIVIA2_ACCOUNT = "dmbtrivia2";
-
-	private static String CURR_KEY = PROD_KEY;
-	private static String CURR_SECRET = PROD_SECRET;
-	private static String CURR_ACCESS_TOKEN = PROD_ACCESS_TOKEN;
-	private static String CURR_ACCESS_SECRET = PROD_ACCESS_SECRET;
-	private static String CURR_ACCOUNT = PROD_ACCOUNT;
-
-    private static final String PARSE_APP_ID =
-            "ImI8mt1EM3NhZNRqYZOyQpNSwlfsswW73mHsZV3R";
-    private static final String PARSE_REST_KEY =
-            "1smRSlfAvbFg4AsDxat1yZ3xknHQbyhzZ4msAi5w";
-    private static final String PARSE_DEV_APP_ID =
-            "6pJz1oVHAwZ7tfOuvHfQCRz6AVKZzg1itFVfzx2q";
-    private static final String PARSE_DEV_REST_KEY =
-            "uNZMDvDSahtRxZVRwpUVwzAG9JdLzx4cbYnhYPi7";
 
 	private static final String SETLIST_DIR = "/home/SETLISTS/";
     private static final String SETLIST_FILENAME = SETLIST_DIR + "setlist";
@@ -113,6 +82,11 @@ public class DmbTrivia {
 	private static Logger logger;
 
     private static Configuration gameTweetConfig;
+    // TODO Store this somewhere secure
+    private Parse parse;
+    private FileUtil fileUtil = FileUtil.instance();
+    private JsonUtil jsonUtil = JsonUtil.instance();
+    private CredentialUtil credentialUtil = CredentialUtil.instance();
 
 	public static void main(String args[]) {
 		// creates pattern layout
@@ -158,21 +132,10 @@ public class DmbTrivia {
         tipList = gameUtil.createTipList();
         songList = gameUtil.generateSongMatchList();
         symbolList = gameUtil.generateSymbolList();
-        if (isTwitterDev) {
-            CURR_KEY = DEV_KEY;
-            CURR_SECRET = DEV_SECRET;
-            CURR_ACCESS_TOKEN = DEV_ACCESS_TOKEN;
-            CURR_ACCESS_SECRET = DEV_ACCESS_SECRET;
-            CURR_ACCOUNT = DEV_ACCOUNT;
-        }
-        else {
-            CURR_KEY = PROD_KEY;
-            CURR_SECRET = PROD_SECRET;
-            CURR_ACCESS_TOKEN = PROD_ACCESS_TOKEN;
-            CURR_ACCESS_SECRET = PROD_ACCESS_SECRET;
-            CURR_ACCOUNT = PROD_ACCOUNT;
-        }
-        gameTweetConfig = isTwitterDev ? setupTweet(false) : setupTweet(true);
+        parse = credentialUtil.getCredentialedParse(isParseDev);
+        gameTweetConfig = isTwitterDev ? credentialUtil.getCredentialedTwitter(
+                parse, false) : credentialUtil.getCredentialedTwitter(parse,
+                true);
         if (logger != null) {
             logger.info("Setup params:");
             logger.info("questions: " + questionCount);
@@ -186,16 +149,13 @@ public class DmbTrivia {
                 LEADERS_LIMIT, SCORES_TOP_OFFSET, SCORES_BOTTOM_OFFSET,
                 gameTweetConfig, questionCount, bonusCount, answerList,
                 acronymMap, replaceList, tipList, isTwitterDev, PRE_TEXT,
-                lightningCount, SCREENSHOT_FILENAME, PARSE_APP_ID,
-                PARSE_REST_KEY);
-        setlist = new Setlist(null, isTwitterDev, setupTweet(false),
+                lightningCount, SCREENSHOT_FILENAME, parse);
+        setlist = new Setlist(null, isTwitterDev,
+                credentialUtil.getCredentialedTwitter(parse, false),
                 gameTweetConfig, SETLIST_JPG_FILENAME, ROBOTO_FONT_FILENAME,
                 SETLIST_FONT_SIZE, SETLIST_TOP_OFFSET, SETLIST_BOTTOM_OFFSET,
                 SETLIST_FILENAME, LAST_SONG_FILENAME, SETLIST_DIR, BAN_FILE,
-                songList, symbolList, isTwitterDev ? CURR_ACCOUNT :
-                TRIVIA2_ACCOUNT, isParseDev ? PARSE_DEV_APP_ID :
-                PARSE_APP_ID, isParseDev ? PARSE_DEV_REST_KEY :
-                PARSE_REST_KEY, "setlist", "scores");
+                songList, symbolList, "dmbtrivia2", parse, "setlist", "scores");
         twitterStream = new TwitterStreamFactory(gameTweetConfig).getInstance();
         twitterStream.addRateLimitStatusListener(new RateLimitStatusListener() {
             public void onRateLimitReached(RateLimitStatusEvent event) {
@@ -265,18 +225,6 @@ public class DmbTrivia {
 			e.printStackTrace();
 		}
 	}
-	
-	private static Configuration setupTweet(boolean isGame) {
-    	ConfigurationBuilder cb = new ConfigurationBuilder();
-		cb.setDebugEnabled(true)
-		  .setOAuthConsumerKey(isGame ? TRIVIA2_KEY : CURR_KEY)
-		  .setOAuthConsumerSecret(isGame ? TRIVIA2_SECRET : CURR_SECRET)
-		  .setOAuthAccessToken(isGame ? TRIVIA2_ACCESS_TOKEN :
-                  CURR_ACCESS_TOKEN)
-		  .setOAuthAccessTokenSecret(isGame ? TRIVIA2_ACCESS_SECRET :
-                  CURR_ACCESS_SECRET);
-		return cb.build();
-    }
 
 	static UserStreamListener streamListener = new UserStreamListener() {
 		public void onDirectMessage(DirectMessage dm) {
