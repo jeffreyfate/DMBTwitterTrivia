@@ -2,10 +2,8 @@ package com.jeffthefate;
 
 import com.jeffthefate.setlist.Setlist;
 import com.jeffthefate.utils.CredentialUtil;
-import com.jeffthefate.utils.FileUtil;
 import com.jeffthefate.utils.GameUtil;
 import com.jeffthefate.utils.Parse;
-import com.jeffthefate.utils.json.JsonUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.DailyRollingFileAppender;
 import org.apache.log4j.Level;
@@ -17,6 +15,7 @@ import twitter4j.conf.Configuration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -26,67 +25,19 @@ import java.util.regex.Pattern;
  */
 public class DmbTrivia {
 
-	private static final String SETLIST_DIR = "/home/SETLISTS/";
-    private static final String SETLIST_FILENAME = SETLIST_DIR + "setlist";
-    private static final String SETLIST_FILENAME_DEV = SETLIST_DIR +
-    		"setlist_dev";
-	private static final String LAST_SONG_DIR = "/home/LAST_SONGS/";
-    private static final String LAST_SONG_FILENAME = LAST_SONG_DIR +
-    		"last_song";
-    private static final String LAST_SONG_FILENAME_DEV = LAST_SONG_DIR +
-    		"last_song_dev";
-	private static final String SETLIST_JPG_FILENAME = "/home/setlist.jpg";
-	private static final String ROBOTO_FONT_FILENAME = "/home/roboto.ttf";
-	private static final String BAN_FILE = "/home/banlist.ser";
-    private static final String SCREENSHOT_FILENAME = "/home/TEMP/scores";
-	
-	private static final String PRE_SHOW_PRE_TEXT = "[#DMB Trivia] ";
-	private static final String PRE_TEXT = "[DMB Trivia] ";
-	private static final String LEADERS_TITLE = "Top Scores";
-	private static final String PRE_SHOW_TEXT = "Game starts on @dmbtrivia2 in 15 minutes";
+	private TwitterStream twitterStream;
+    private Configuration gameTweetConfig;
 
-	private static final int SETLIST_FONT_SIZE = 60;
-    private static final int SETLIST_TOP_OFFSET = 180;
-    private static final int SETLIST_BOTTOM_OFFSET = 60;
-	
-	private static final int TRIVIA_MAIN_FONT_SIZE = 60;
-	private static final int TRIVIA_DATE_FONT_SIZE = TRIVIA_MAIN_FONT_SIZE - 30;
-	private static final int LEADERS_LIMIT = 10;
-	private static final int SCORES_TOP_OFFSET = 200;
-    private static final int SCORES_BOTTOM_OFFSET = 40;
-	private static final int PRE_SHOW_TIME = (15 * 60 * 1000);
-	
-	private static Setlist setlist;
-    
-    private static ArrayList<ArrayList<String>> songList;
-	private static ArrayList<String> symbolList;
+    private static Setlist setlist;
+    private static Trivia trivia;
+    private static boolean doWarning = true;
+    private static boolean setlistStarted = false;
+    private static boolean triviaStarted = false;
+    private static String triggerUsername = null;
+    private static String triggerResponse = null;
+    private static boolean kill = false;
 
-	private static ArrayList<ArrayList<String>> answerList;
-	private static HashMap<String, String> acronymMap;
-	private static ArrayList<String> replaceList;
-	private static ArrayList<String> tipList;
-
-	private static Trivia trivia;
-	private static int questionCount = 34;
-	private static int bonusCount = 6;
-	private static int lightningCount = 6;
-	private static boolean doWarning = true;
-
-	private static TwitterStream twitterStream;
-	private static String triggerUsername = null;
-	private static String triggerResponse = null;
-
-	private static boolean setlistStarted = false;
-	private static boolean triviaStarted = false;
-
-	private static Logger logger;
-
-    private static Configuration gameTweetConfig;
-    // TODO Store this somewhere secure
-    private Parse parse;
-    private FileUtil fileUtil = FileUtil.instance();
-    private JsonUtil jsonUtil = JsonUtil.instance();
-    private CredentialUtil credentialUtil = CredentialUtil.instance();
+    private static Logger logger;
 
 	public static void main(String args[]) {
 		// creates pattern layout
@@ -115,24 +66,29 @@ public class DmbTrivia {
 		dmbTrivia.startListening(null, false);
 	}
 
-    public static Setlist getSetlist() {
+    public Setlist getSetlist() {
         return setlist;
     }
 
-    public static void setSetlist(Setlist setlist) {
+    public void setSetlist(Setlist setlist) {
         DmbTrivia.setlist = setlist;
     }
 
     public DmbTrivia(boolean isTwitterDev, boolean isParseDev) {
         // Setup to start
         GameUtil gameUtil = GameUtil.instance();
-        answerList = gameUtil.setupAnswerList();
-        acronymMap = gameUtil.createAcronymMap();
-        replaceList = gameUtil.createReplaceList();
-        tipList = gameUtil.createTipList();
-        songList = gameUtil.generateSongMatchList();
-        symbolList = gameUtil.generateSymbolList();
-        parse = credentialUtil.getCredentialedParse(isParseDev);
+        int questionCount = 34;
+        int bonusCount = 6;
+        int lightningCount = 6;
+        ArrayList<ArrayList<String>> answerList = gameUtil.setupAnswerList();
+        HashMap<String, String> acronymMap = gameUtil.createAcronymMap();
+        ArrayList<String> replaceList = gameUtil.createReplaceList();
+        ArrayList<String> tipList = gameUtil.createTipList();
+        ArrayList<ArrayList<String>> songList = gameUtil
+                .generateSongMatchList();
+        ArrayList<String> symbolList = gameUtil.generateSymbolList();
+        CredentialUtil credentialUtil = CredentialUtil.instance();
+        Parse parse = credentialUtil.getCredentialedParse(isParseDev);
         gameTweetConfig = isTwitterDev ? credentialUtil.getCredentialedTwitter(
                 parse, false) : credentialUtil.getCredentialedTwitter(parse,
                 true);
@@ -144,15 +100,34 @@ public class DmbTrivia {
             logger.info("twitter dev: " + isTwitterDev);
             logger.info("parse dev: " + isParseDev);
         }
-        trivia = new Trivia(SETLIST_JPG_FILENAME, ROBOTO_FONT_FILENAME,
+        final String SETLIST_JPG_FILENAME = "/home/setlist.jpg";
+        final String FONT_FILENAME = "/home/roboto.ttf";
+        final String BAN_FILE = "/home/banlist.ser";
+        final String SCREENSHOT_FILENAME = "/home/TEMP/scores";
+        final String PRE_TEXT = "[DMB Trivia] ";
+        final String LEADERS_TITLE = "Top Scores";
+
+        final int TRIVIA_MAIN_FONT_SIZE = 60;
+        final int TRIVIA_DATE_FONT_SIZE = TRIVIA_MAIN_FONT_SIZE - 30;
+        final int LEADERS_LIMIT = 10;
+        final int SCORES_TOP_OFFSET = 200;
+        final int SCORES_BOTTOM_OFFSET = 40;
+        trivia = new Trivia(SETLIST_JPG_FILENAME, FONT_FILENAME,
                 LEADERS_TITLE, TRIVIA_MAIN_FONT_SIZE, TRIVIA_DATE_FONT_SIZE,
                 LEADERS_LIMIT, SCORES_TOP_OFFSET, SCORES_BOTTOM_OFFSET,
                 gameTweetConfig, questionCount, bonusCount, answerList,
                 acronymMap, replaceList, tipList, isTwitterDev, PRE_TEXT,
                 lightningCount, SCREENSHOT_FILENAME, parse);
+        final int SETLIST_FONT_SIZE = 40;
+        final int SETLIST_TOP_OFFSET = 180;
+        final int SETLIST_BOTTOM_OFFSET = 60;
+        final String SETLIST_DIR = "/home/SETLISTS/";
+        final String SETLIST_FILENAME = SETLIST_DIR + "setlist";
+        final String LAST_SONG_DIR = "/home/LAST_SONGS/";
+        final String LAST_SONG_FILENAME = LAST_SONG_DIR + "last_song";
         setlist = new Setlist(null, isTwitterDev,
                 credentialUtil.getCredentialedTwitter(parse, false),
-                gameTweetConfig, SETLIST_JPG_FILENAME, ROBOTO_FONT_FILENAME,
+                gameTweetConfig, SETLIST_JPG_FILENAME, FONT_FILENAME,
                 SETLIST_FONT_SIZE, SETLIST_TOP_OFFSET, SETLIST_BOTTOM_OFFSET,
                 SETLIST_FILENAME, LAST_SONG_FILENAME, SETLIST_DIR, BAN_FILE,
                 songList, symbolList, "dmbtrivia2", parse, "setlist", "scores");
@@ -188,9 +163,13 @@ public class DmbTrivia {
     }
 
     public void startListening(ArrayList<String> files, boolean startSetlist) {
+        final int PRE_SHOW_TIME = (15 * 60 * 1000);
+        final String PRE_SHOW_PRE_TEXT = "[#DMB Trivia] ";
+        final String PRE_SHOW_TEXT = "Game starts on @dmbtrivia2 in " +
+                PRE_SHOW_TIME + " minutes";
         setlistStarted = startSetlist;
         twitterStream.user();
-        while (true) {
+        while (!kill) {
             if (triviaStarted) {
                 trivia.startTrivia(doWarning,
                         PRE_SHOW_PRE_TEXT + PRE_SHOW_TEXT, PRE_SHOW_TIME);
@@ -201,8 +180,9 @@ public class DmbTrivia {
                 setlistStarted = false;
             }
             try {
-                Thread.sleep(1000);
+                TimeUnit.SECONDS.sleep(10);
             } catch (InterruptedException e) {
+                logger.error("Sleep interrupted!", e);
             }
             if (triggerUsername != null && triggerResponse != null) {
                 sendDirectMessage(gameTweetConfig, triggerUsername,
@@ -211,6 +191,8 @@ public class DmbTrivia {
                 triggerResponse = null;
             }
         }
+        twitterStream.cleanUp();
+        twitterStream.shutdown();
     }
 
 	private static void sendDirectMessage(Configuration tweetConfig,
@@ -239,11 +221,7 @@ public class DmbTrivia {
 				String massagedText = dm.getText().toLowerCase(
 						Locale.getDefault());
 				if (massagedText.contains("start trivia")) {
-					if (massagedText.contains("skip")) {
-						doWarning = false;
-					} else {
-						doWarning = true;
-					}
+                    doWarning = !massagedText.contains("skip");
 					ArrayList<Integer> countList = new ArrayList<Integer>(0);
 					String temp;
 					if (dmText.matches(".*\\d.*")) {
@@ -305,7 +283,9 @@ public class DmbTrivia {
 							+ setlist.getDurationHours() + " hours";
 					setlistStarted = true;
 				} else if (massagedText.contains("end setlist")) {
-					setlist.setKill(true);
+                    setlist.setKill(true);
+                } else if (massagedText.contains("kill")) {
+                    kill = true;
 				} else if (massagedText.contains("unban")) {
 					setlist.unbanUser(StringUtils.strip(massagedText.replace(
 							"unban", "")));
@@ -358,59 +338,24 @@ public class DmbTrivia {
 			setlist.processTweet(status);
 		}
 
-		public void onTrackLimitationNotice(int arg0) {
-		}
-
-		public void onException(Exception arg0) {
-		}
-
-		public void onBlock(User arg0, User arg1) {
-		}
-
-		public void onDeletionNotice(long arg0, long arg1) {
-		}
-
-		public void onFavorite(User arg0, User arg1, Status arg2) {
-		}
-
-		public void onFollow(User arg0, User arg1) {
-		}
-
-		public void onFriendList(long[] arg0) {
-		}
-
-		public void onUnblock(User arg0, User arg1) {
-		}
-
-		public void onUnfavorite(User arg0, User arg1, Status arg2) {
-		}
-
-		public void onUnfollow(User arg0, User arg1) {
-		}
-
-		public void onUserListCreation(User arg0, UserList arg1) {
-		}
-
-		public void onUserListDeletion(User arg0, UserList arg1) {
-		}
-
-		public void onUserListMemberAddition(User arg0, User arg1, UserList arg2) {
-		}
-
-		public void onUserListMemberDeletion(User arg0, User arg1, UserList arg2) {
-		}
-
-		public void onUserListSubscription(User arg0, User arg1, UserList arg2) {
-		}
-
-		public void onUserListUnsubscription(User arg0, User arg1, UserList arg2) {
-		}
-
-		public void onUserListUpdate(User arg0, UserList arg1) {
-		}
-
-		public void onUserProfileUpdate(User arg0) {
-		}
+		public void onTrackLimitationNotice(int arg0) {}
+		public void onException(Exception arg0) {}
+		public void onBlock(User arg0, User arg1) {}
+		public void onDeletionNotice(long arg0, long arg1) {}
+		public void onFavorite(User arg0, User arg1, Status arg2) {}
+		public void onFollow(User arg0, User arg1) {}
+		public void onFriendList(long[] arg0) {}
+		public void onUnblock(User arg0, User arg1) {}
+		public void onUnfavorite(User arg0, User arg1, Status arg2) {}
+		public void onUnfollow(User arg0, User arg1) {}
+		public void onUserListCreation(User arg0, UserList arg1) {}
+		public void onUserListDeletion(User arg0, UserList arg1) {}
+		public void onUserListMemberAddition(User arg0, User arg1, UserList arg2) {}
+		public void onUserListMemberDeletion(User arg0, User arg1, UserList arg2) {}
+		public void onUserListSubscription(User arg0, User arg1, UserList arg2) {}
+		public void onUserListUnsubscription(User arg0, User arg1, UserList arg2) {}
+		public void onUserListUpdate(User arg0, UserList arg1) {}
+        public void onUserProfileUpdate(User arg0) {}
 	};
 
 }

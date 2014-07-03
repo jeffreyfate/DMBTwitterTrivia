@@ -1,9 +1,11 @@
 package com.jeffthefate;
 
+import com.jeffthefate.setlist.Setlist;
 import com.jeffthefate.utils.FileUtil;
 import junit.framework.TestCase;
 
 import java.io.File;
+import java.util.ArrayList;
 
 public class DmbTriviaTest extends TestCase {
 
@@ -14,16 +16,15 @@ public class DmbTriviaTest extends TestCase {
     private final String LAST_SONG_DIR = USER_DIR + "LAST_SONG" +
             File.separator;
     private final String LAST_SONG_FILENAME = LAST_SONG_DIR + "last_song";
-    private final String TEST_RESOURCES = "src/test/resources/";
-    private final String TEST_RESOURCES_SET = "src/test/resources/set/";
-    private final String TEST_JPG = TEST_RESOURCES + "setlist.jpg";
-    private final String TEST_FONT = TEST_RESOURCES + "roboto.ttf";
-    private final String TEST_BAN = TEST_RESOURCES + "ban.ser";
 
     private FileUtil fileUtil = FileUtil.instance();
 
     public void testDmbTriviaFullSet() {
-        /*
+        final String TEST_RESOURCES_SET = "src/test/resources/set/";
+        final String TEST_RESOURCES = "src/test/resources/";
+        final String TEST_JPG = TEST_RESOURCES + "setlist.jpg";
+        final String TEST_FONT = TEST_RESOURCES + "roboto.ttf";
+        final String TEST_BAN = TEST_RESOURCES + "ban.ser";
         System.out.println(USER_DIR);
     	// Use dev/test Parse and Twitter credentials
         DmbTrivia dmbTrivia = new DmbTrivia(true, true);
@@ -40,6 +41,5 @@ public class DmbTriviaTest extends TestCase {
                 ".txt");
         // Cycle through each, setting the URL to the file after a wait
         dmbTrivia.startListening(files, true);
-        */
     }
 }
