@@ -1,10 +1,7 @@
 package com.jeffthefate;
 
 import com.jeffthefate.setlist.Setlist;
-import com.jeffthefate.utils.CredentialUtil;
-import com.jeffthefate.utils.GameUtil;
-import com.jeffthefate.utils.Parse;
-import com.jeffthefate.utils.TwitterUtil;
+import com.jeffthefate.utils.*;
 import com.jeffthefate.utils.json.Credential;
 import com.jeffthefate.utils.json.JsonUtil;
 import org.apache.commons.lang3.StringUtils;
@@ -39,6 +36,8 @@ public class DmbTrivia {
     private static String triggerResponse = null;
     private static boolean kill = false;
 
+    private FileUtil fileUtil;
+
     private static Logger logger;
 
 	public static void main(String args[]) {
@@ -66,7 +65,7 @@ public class DmbTrivia {
 
 		DmbTrivia dmbTrivia = new DmbTrivia(false, false,
                 "/home/parseCreds.ser");
-		dmbTrivia.startListening(null, false);
+		dmbTrivia.startListening(null, false, "/home/lastScores.ser");
 	}
 
     public Setlist getSetlist() {
@@ -81,6 +80,7 @@ public class DmbTrivia {
             String credsFile) {
         // Setup to start
         GameUtil gameUtil = GameUtil.instance();
+        fileUtil = FileUtil.instance();
         int questionCount = 34;
         int bonusCount = 6;
         int lightningCount = 6;
@@ -108,7 +108,7 @@ public class DmbTrivia {
         final String SETLIST_JPG_FILENAME = "/home/setlist.jpg";
         final String FONT_FILENAME = "/home/roboto.ttf";
         final String BAN_FILE = "/home/banlist.ser";
-        final String SCORES_FILE = "/home/scores.ser";
+        final String SETLIST_SCORES_FILE = "/home/setlistScores.ser";
         final String SCREENSHOT_FILENAME = "/home/TEMP/scores";
         final String PRE_TEXT = "[DMB Trivia] ";
         final String LEADERS_TITLE = "Top Scores";
@@ -119,12 +119,13 @@ public class DmbTrivia {
         final int LEADERS_LIMIT = 10;
         final int SCORES_TOP_OFFSET = 160;
         final int SCORES_BOTTOM_OFFSET = 80;
+        final String TRIVIA_SCORES_FILE = "/home/triviaScores.ser";
         trivia = new Trivia(SETLIST_JPG_FILENAME, FONT_FILENAME,
                 LEADERS_TITLE, TRIVIA_MAIN_FONT_SIZE, TRIVIA_DATE_FONT_SIZE,
                 LEADERS_LIMIT, SCORES_TOP_OFFSET, SCORES_BOTTOM_OFFSET,
                 gameTweetConfig, questionCount, bonusCount, answerList,
                 acronymMap, replaceList, tipList, isTwitterDev, PRE_TEXT,
-                lightningCount, SCREENSHOT_FILENAME, parse);
+                lightningCount, SCREENSHOT_FILENAME, parse, TRIVIA_SCORES_FILE);
         final int SETLIST_FONT_SIZE = 25;
         final int SETLIST_TOP_OFFSET = 120;
         final int SETLIST_BOTTOM_OFFSET = 20;
@@ -150,7 +151,7 @@ public class DmbTrivia {
                 GAME_TITLE, TRIVIA_MAIN_FONT_SIZE, TRIVIA_DATE_FONT_SIZE,
                 SCORES_TOP_OFFSET, SCORES_BOTTOM_OFFSET, LEADERS_LIMIT,
                 SETLIST_FILENAME, LAST_SONG_FILENAME, SETLIST_DIR, BAN_FILE,
-                SCORES_FILE, songList, symbolList, GAME_ACCOUNT, parse,
+                SETLIST_SCORES_FILE, songList, symbolList, GAME_ACCOUNT, parse,
                 "setlist", "scores");
         twitterStream = new TwitterStreamFactory(gameTweetConfig).getInstance();
         twitterStream.addRateLimitStatusListener(new RateLimitStatusListener() {
@@ -183,7 +184,8 @@ public class DmbTrivia {
         twitterStream.addListener(streamListener);
     }
 
-    public void startListening(ArrayList<String> files, boolean startSetlist) {
+    public void startListening(ArrayList<String> files, boolean startSetlist,
+            String lastScoresFile) {
         final int PRE_SHOW_MINUTES = 15;
         final int PRE_SHOW_TIME = (PRE_SHOW_MINUTES * 60 * 1000);
         final String PRE_SHOW_PRE_TEXT = "[#DMB Trivia] ";
@@ -193,11 +195,27 @@ public class DmbTrivia {
         twitterStream.user();
         while (!kill) {
             if (triviaStarted) {
+                String lastScores = fileUtil.readStringFromFile(lastScoresFile);
+                String date = new SimpleDateFormat("yyyy-MM-dd-HH")
+                        .format(new Date());
+                if (StringUtils.isBlank(lastScores)) {
+                    trivia.setScoresFile("/home/triviaScores" + date + ".ser",
+                            lastScoresFile);
+                }
+                else {
+                    trivia.setScoresFile(lastScores, lastScoresFile);
+                }
                 trivia.startTrivia(doWarning,
                         PRE_SHOW_PRE_TEXT + PRE_SHOW_TEXT, PRE_SHOW_TIME);
                 triviaStarted = false;
             }
             else if (setlistStarted) {
+                if (setlist.getDurationHours() != 0) {
+                    String date = new SimpleDateFormat("yyyy-MM-dd")
+                            .format(new Date());
+                    setlist.setScoresFile("/home/setlistScores" + date + "" +
+                            ".ser");
+                }
                 setlist.startSetlist(files);
                 setlistStarted = false;
             }
@@ -288,11 +306,6 @@ public class DmbTrivia {
                     if (dmText.contains("test")) {
                         setlist.setDuration(0);
                         setlist.setUrl("/home/test2014-06-20.txt");
-                    }
-                    if (setlist.getDurationHours() != 0) {
-                        String date = new SimpleDateFormat("yyyy-MM-dd")
-                                .format(new Date());
-                        setlist.setScoresFile("/home/scores" + date + ".ser");
                     }
 					triggerResponse = "Command received! Starting setlist: "
 							+ setlist.getDurationHours() + " hours";
