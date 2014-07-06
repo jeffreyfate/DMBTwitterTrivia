@@ -5,7 +5,9 @@ import com.jeffthefate.utils.FileUtil;
 import junit.framework.TestCase;
 
 import java.io.File;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 
 public class DmbTriviaTest extends TestCase {
 
@@ -25,21 +27,27 @@ public class DmbTriviaTest extends TestCase {
         final String TEST_JPG = TEST_RESOURCES + "setlist.jpg";
         final String TEST_FONT = TEST_RESOURCES + "roboto.ttf";
         final String TEST_BAN = TEST_RESOURCES + "ban.ser";
-        System.out.println(USER_DIR);
+        String date = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+        final String TEST_SCORES = TEST_RESOURCES + "scores" + date + ".ser";
     	// Use dev/test Parse and Twitter credentials
-        DmbTrivia dmbTrivia = new DmbTrivia(true, true);
+        DmbTrivia dmbTrivia = new DmbTrivia(true, true, "D:\\parseCreds");
         // Setup app as usual for the most part
         Setlist setlist = dmbTrivia.getSetlist();
         setlist.setSetlistFilename(SETLIST_FILENAME);
         setlist.setLastSongFilename(LAST_SONG_FILENAME);
         setlist.setSetlistDir(SETLIST_DIR);
+        File setlistFile = new File(SETLIST_DIR);
+        File lastSongFile = new File(LAST_SONG_DIR);
+        setlistFile.mkdir();
+        lastSongFile.mkdir();
         setlist.setSetlistJpgFilename(TEST_JPG);
         setlist.setFontFilename(TEST_FONT);
         setlist.setBanFile(TEST_BAN);
+        setlist.setScoresFile(TEST_SCORES);
         // Grab the list of test files
         ArrayList<String> files = fileUtil.getListOfFiles(TEST_RESOURCES_SET,
                 ".txt");
         // Cycle through each, setting the URL to the file after a wait
-        dmbTrivia.startListening(files, true);
+        //dmbTrivia.startListening(files, true);
     }
 }
