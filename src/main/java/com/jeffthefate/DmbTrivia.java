@@ -35,8 +35,10 @@ public class DmbTrivia {
     private static String triggerUsername = null;
     private static String triggerResponse = null;
     private static boolean kill = false;
+    private static boolean showToday = false;
 
     private FileUtil fileUtil;
+    private DmbAlmanacUtil dmbAlmanacUtil = DmbAlmanacUtil.instance();
 
     private static Logger logger;
 
@@ -193,7 +195,20 @@ public class DmbTrivia {
                 PRE_SHOW_MINUTES + " minutes";
         setlistStarted = startSetlist;
         twitterStream.user();
+        Calendar midnight;
         while (!kill) {
+            midnight = new GregorianCalendar();
+            midnight.set(Calendar.HOUR_OF_DAY, 0);
+            midnight.set(Calendar.MINUTE, 0);
+            midnight.set(Calendar.SECOND, 0);
+            midnight.set(Calendar.MILLISECOND, 0);
+            Date now = new Date();
+            if (now.after(midnight.getTime())) {
+                midnight.set(Calendar.SECOND, 10);
+                if (now.before(midnight.getTime())) {
+                    showToday = dmbAlmanacUtil.isThereAShowToday(null, null);
+                }
+            }
             if (triviaStarted) {
                 String lastScores = fileUtil.readStringFromFile(lastScoresFile);
                 String date = new SimpleDateFormat("yyyy-MM-dd-HH")
