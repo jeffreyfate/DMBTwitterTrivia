@@ -2,8 +2,9 @@ package com.jeffthefate;
 
 import com.jeffthefate.setlist.Setlist;
 import com.jeffthefate.utils.*;
-import com.jeffthefate.utils.json.Credential;
 import com.jeffthefate.utils.json.JsonUtil;
+import com.jeffthefate.utils.json.geocoding.LatLon;
+import com.jeffthefate.utils.json.parse.Credential;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.DailyRollingFileAppender;
 import org.apache.log4j.Level;
@@ -12,8 +13,10 @@ import org.apache.log4j.PatternLayout;
 import twitter4j.*;
 import twitter4j.conf.Configuration;
 
+import java.security.InvalidParameterException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -35,12 +38,13 @@ public class DmbTrivia {
     private static String triggerUsername = null;
     private static String triggerResponse = null;
     private static boolean kill = false;
-    private static boolean showToday = false;
 
     private FileUtil fileUtil;
     private DmbAlmanacUtil dmbAlmanacUtil = DmbAlmanacUtil.instance();
+    private GeocodingUtil geocodingUtil = GeocodingUtil.instance();
+    private TimeZoneUtil timeZoneUtil = TimeZoneUtil.instance();
 
-    private static Logger logger;
+    private static Logger logger = Logger.getLogger(DmbTrivia.class);
 
 	public static void main(String args[]) {
 		// creates pattern layout
@@ -67,7 +71,10 @@ public class DmbTrivia {
 
 		DmbTrivia dmbTrivia = new DmbTrivia(false, false,
                 "/home/parseCreds.ser");
-		dmbTrivia.startListening(null, false, "/home/lastScores.ser");
+        String date = new SimpleDateFormat("yyyy-MM-dd-HH")
+                .format(new Date());
+		dmbTrivia.startListening(null, false, "/home/lastTriviaScores" + date +
+                ".ser", "/home/lastSetlistScores" + date + ".ser");
 	}
 
     public Setlist getSetlist() {
@@ -78,6 +85,10 @@ public class DmbTrivia {
         DmbTrivia.setlist = setlist;
     }
 
+    public static Trivia getTrivia() { return trivia; }
+
+    public static void setTrivia(Trivia trivia) { DmbTrivia.trivia = trivia; }
+
     public DmbTrivia(boolean isTwitterDev, boolean isParseDev,
             String credsFile) {
         // Setup to start
@@ -86,13 +97,16 @@ public class DmbTrivia {
         int questionCount = 34;
         int bonusCount = 6;
         int lightningCount = 6;
-        ArrayList<ArrayList<String>> answerList = gameUtil.setupAnswerList();
-        HashMap<String, String> acronymMap = gameUtil.createAcronymMap();
-        ArrayList<String> replaceList = gameUtil.createReplaceList();
-        ArrayList<String> tipList = gameUtil.createTipList();
+        ArrayList<ArrayList<String>> answerList = gameUtil.setupAnswerList(
+                isParseDev, credsFile);
+        ArrayList<String> replaceList = gameUtil.createReplaceList(isParseDev,
+                credsFile);
+        ArrayList<String> tipList = gameUtil.createTriviaTipList(isParseDev,
+                credsFile);
         ArrayList<ArrayList<String>> songList = gameUtil
-                .generateSongMatchList();
-        ArrayList<String> symbolList = gameUtil.generateSymbolList();
+                .generateSongMatchList(isParseDev, credsFile);
+        ArrayList<String> symbolList = gameUtil.generateSymbolList(isParseDev,
+                credsFile);
         CredentialUtil credentialUtil = CredentialUtil.instance();
         Parse parse = credentialUtil.getCredentialedParse(isParseDev,
                 credsFile);
@@ -126,8 +140,8 @@ public class DmbTrivia {
                 LEADERS_TITLE, TRIVIA_MAIN_FONT_SIZE, TRIVIA_DATE_FONT_SIZE,
                 LEADERS_LIMIT, SCORES_TOP_OFFSET, SCORES_BOTTOM_OFFSET,
                 gameTweetConfig, questionCount, bonusCount, answerList,
-                acronymMap, replaceList, tipList, isTwitterDev, PRE_TEXT,
-                lightningCount, SCREENSHOT_FILENAME, parse, TRIVIA_SCORES_FILE);
+                replaceList, tipList, isTwitterDev, PRE_TEXT, lightningCount,
+                SCREENSHOT_FILENAME, parse, TRIVIA_SCORES_FILE);
         final int SETLIST_FONT_SIZE = 25;
         final int SETLIST_TOP_OFFSET = 120;
         final int SETLIST_BOTTOM_OFFSET = 20;
@@ -186,8 +200,72 @@ public class DmbTrivia {
         twitterStream.addListener(streamListener);
     }
 
+    public long getShowStart(Date now, int year) {
+        String nowString = dmbAlmanacUtil
+                .convertDateToAlmanacFormat(now);
+        String showCity = dmbAlmanacUtil.getShowCity(nowString,
+                Integer.toString(year));
+        LatLon latLon = geocodingUtil.getCityLatLon(showCity);
+        long offset;
+        try {
+            offset = timeZoneUtil.getTimeOffset(latLon);
+        } catch (InvalidParameterException e) {
+            logger.error("Couldn't determine time zone offset!", e);
+            return -1;
+        }
+        Calendar showTime = new GregorianCalendar(TimeZone.getTimeZone("GMT"));
+        // TODO What can we do instead of hard coding?
+        showTime.setTime(now);
+        showTime.set(Calendar.HOUR_OF_DAY, 19);
+        showTime.set(Calendar.MINUTE, 0);
+        showTime.set(Calendar.SECOND, 0);
+        showTime.set(Calendar.MILLISECOND, 0);
+        return showTime.getTimeInMillis() - (offset * 1000);
+    }
+
+    public long showCheck(long showStart) {
+        Calendar midnight = new GregorianCalendar();
+        midnight.set(Calendar.HOUR_OF_DAY, 0);
+        midnight.set(Calendar.MINUTE, 0);
+        midnight.set(Calendar.SECOND, 0);
+        midnight.set(Calendar.MILLISECOND, 0);
+        Date now = new Date();
+        if (now.after(midnight.getTime())) {
+            logger.info("After midnight");
+            midnight.set(Calendar.SECOND, 15);
+            if (now.before(midnight.getTime()) || showStart == -2) {
+                logger.info("Right after midnight");
+                boolean showToday = dmbAlmanacUtil.isThereAShowToday(null,
+                        null);
+                logger.info("showToday: " + showToday);
+                if (showToday) {
+                    showStart = getShowStart(now, midnight.get(Calendar.YEAR));
+                }
+                else {
+                    showStart = -1;
+                }
+            }
+        }
+        logger.info("showStart: " + showStart);
+        if (showStart >= 0) {
+            logger.info("now: " + now.getTime());
+            if (now.getTime() >= showStart - 1800000) {
+                logger.info("Starting setlist for 5 hours");
+                setlist.setDuration(5);
+                setlistStarted = true;
+                showStart = -1;
+            }
+            else if (now.getTime() % 3600000 < 15000) {
+                logger.info("Starting setlist for 0 hours");
+                setlist.setDuration(0);
+                setlistStarted = true;
+            }
+        }
+        return showStart;
+    }
+
     public void startListening(ArrayList<String> files, boolean startSetlist,
-            String lastScoresFile) {
+            String lastTriviaScoresFile, String lastSetlistScoresFile) {
         final int PRE_SHOW_MINUTES = 15;
         final int PRE_SHOW_TIME = (PRE_SHOW_MINUTES * 60 * 1000);
         final String PRE_SHOW_PRE_TEXT = "[#DMB Trivia] ";
@@ -195,41 +273,23 @@ public class DmbTrivia {
                 PRE_SHOW_MINUTES + " minutes";
         setlistStarted = startSetlist;
         twitterStream.user();
-        Calendar midnight;
+        long showStart = -2;
         while (!kill) {
-            midnight = new GregorianCalendar();
-            midnight.set(Calendar.HOUR_OF_DAY, 0);
-            midnight.set(Calendar.MINUTE, 0);
-            midnight.set(Calendar.SECOND, 0);
-            midnight.set(Calendar.MILLISECOND, 0);
-            Date now = new Date();
-            if (now.after(midnight.getTime())) {
-                midnight.set(Calendar.SECOND, 10);
-                if (now.before(midnight.getTime())) {
-                    showToday = dmbAlmanacUtil.isThereAShowToday(null, null);
-                }
-            }
+            showStart = showCheck(showStart);
             if (triviaStarted) {
-                String lastScores = fileUtil.readStringFromFile(lastScoresFile);
-                String date = new SimpleDateFormat("yyyy-MM-dd-HH")
-                        .format(new Date());
-                if (StringUtils.isBlank(lastScores)) {
-                    trivia.setScoresFile("/home/triviaScores" + date + ".ser",
-                            lastScoresFile);
+                String lastScores = fileUtil.readStringFromFile(
+                        lastTriviaScoresFile);
+                if (lastScores == null) {
+                    lastScores = "";
                 }
-                else {
-                    trivia.setScoresFile(lastScores, lastScoresFile);
-                }
+                trivia.setScoresFile(lastTriviaScoresFile, lastScores);
                 trivia.startTrivia(doWarning,
                         PRE_SHOW_PRE_TEXT + PRE_SHOW_TEXT, PRE_SHOW_TIME);
                 triviaStarted = false;
             }
             else if (setlistStarted) {
                 if (setlist.getDurationHours() != 0) {
-                    String date = new SimpleDateFormat("yyyy-MM-dd")
-                            .format(new Date());
-                    setlist.setScoresFile("/home/setlistScores" + date + "" +
-                            ".ser");
+                    setlist.setScoresFile(lastSetlistScoresFile);
                 }
                 setlist.startSetlist(files);
                 setlistStarted = false;
