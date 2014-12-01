@@ -21,10 +21,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Hello world!
- * 
- */
 public class DmbTrivia {
 
 	private TwitterStream twitterStream;
@@ -40,6 +36,7 @@ public class DmbTrivia {
     private static boolean kill = false;
 
     private FileUtil fileUtil;
+    private GameUtil gameUtil = GameUtil.instance();
     private DmbAlmanacUtil dmbAlmanacUtil = DmbAlmanacUtil.instance();
     private GeocodingUtil geocodingUtil = GeocodingUtil.instance();
     private TimeZoneUtil timeZoneUtil = TimeZoneUtil.instance();
@@ -47,34 +44,12 @@ public class DmbTrivia {
     private static Logger logger = Logger.getLogger(DmbTrivia.class);
 
 	public static void main(String args[]) {
-		// creates pattern layout
-        PatternLayout layout = new PatternLayout();
-        String conversionPattern = "[%p] %d %c %M - %m%n";
-        layout.setConversionPattern(conversionPattern);
- 
-        // creates daily rolling file appender
-        DailyRollingFileAppender rollingAppender =
-        		new DailyRollingFileAppender();
-        rollingAppender.setFile("/home/dmb.log");
-        rollingAppender.setDatePattern("'.'yyyy-MM-dd");
-        rollingAppender.setLayout(layout);
-        rollingAppender.activateOptions();
- 
-        // configures the root logger
-        Logger rootLogger = Logger.getRootLogger();
-        rootLogger.setLevel(Level.DEBUG);
-        rootLogger.addAppender(rollingAppender);
- 
-        // creates a custom logger and log messages
-        logger = Logger.getLogger(DmbTrivia.class);
-		logger.info("Setting up DMB apps...");
-
 		DmbTrivia dmbTrivia = new DmbTrivia(false, false,
-                "/home/parseCreds.ser");
+                "/home/parseCreds.ser", "/home/dmb.log");
         String date = new SimpleDateFormat("yyyy-MM-dd-HH")
                 .format(new Date());
-		dmbTrivia.startListening(null, false, "/home/lastTriviaScores" + date +
-                ".ser", "/home/lastSetlistScores" + date + ".ser");
+		dmbTrivia.startListening(null, false, false, "/home/lastTriviaScores" + date +
+                ".ser");
 	}
 
     public Setlist getSetlist() {
@@ -90,7 +65,28 @@ public class DmbTrivia {
     public static void setTrivia(Trivia trivia) { DmbTrivia.trivia = trivia; }
 
     public DmbTrivia(boolean isTwitterDev, boolean isParseDev,
-            String credsFile) {
+            String credsFile, String logFile) {
+        // creates pattern layout
+        PatternLayout layout = new PatternLayout();
+        String conversionPattern = "[%p] %d %c %M - %m%n";
+        layout.setConversionPattern(conversionPattern);
+
+        // creates daily rolling file appender
+        DailyRollingFileAppender rollingAppender =
+                new DailyRollingFileAppender();
+        rollingAppender.setFile(logFile);
+        rollingAppender.setDatePattern("'.'yyyy-MM-dd");
+        rollingAppender.setLayout(layout);
+        rollingAppender.activateOptions();
+
+        // configures the root logger
+        Logger rootLogger = Logger.getRootLogger();
+        rootLogger.setLevel(Level.ALL);
+        rootLogger.addAppender(rollingAppender);
+
+        // creates a custom logger and log messages
+        logger = Logger.getLogger(DmbTrivia.class);
+        logger.info("Setting up DMB apps...");
         // Setup to start
         GameUtil gameUtil = GameUtil.instance();
         fileUtil = FileUtil.instance();
@@ -101,8 +97,8 @@ public class DmbTrivia {
                 isParseDev, credsFile);
         ArrayList<String> replaceList = gameUtil.createReplaceList(isParseDev,
                 credsFile);
-        ArrayList<String> tipList = gameUtil.createTriviaTipList(isParseDev,
-                credsFile);
+        ArrayList<String> tipList = gameUtil.createTipList(isParseDev,
+                credsFile, "TriviaTip");
         ArrayList<ArrayList<String>> songList = gameUtil
                 .generateSongMatchList(isParseDev, credsFile);
         ArrayList<String> symbolList = gameUtil.generateSymbolList(isParseDev,
@@ -249,9 +245,17 @@ public class DmbTrivia {
         logger.info("showStart: " + showStart);
         if (showStart >= 0) {
             logger.info("now: " + now.getTime());
+            // TODO Make the 30 minutes dynamic
+            // TODO Make the set length dynamic
             if (now.getTime() >= showStart - 1800000) {
                 logger.info("Starting setlist for 5 hours");
                 setlist.setDuration(5);
+                // TODO Create the filename format in main and use
+                // string substitution?
+                String date = new SimpleDateFormat("yyyy-MM-dd-HH")
+                        .format(new Date());
+                setlist.setScoresFile("/home/lastSetlistScores" + date +
+                        ".ser");
                 setlistStarted = true;
                 showStart = -1;
             }
@@ -265,22 +269,30 @@ public class DmbTrivia {
     }
 
     public void startListening(ArrayList<String> files, boolean startSetlist,
-            String lastTriviaScoresFile, String lastSetlistScoresFile) {
+            boolean startTrivia, String lastTriviaScoresFile) {
         final int PRE_SHOW_MINUTES = 15;
         final int PRE_SHOW_TIME = (PRE_SHOW_MINUTES * 60 * 1000);
         final String PRE_SHOW_PRE_TEXT = "[#DMB Trivia] ";
         final String PRE_SHOW_TEXT = "Game starts on @dmbtrivia2 in " +
                 PRE_SHOW_MINUTES + " minutes";
         setlistStarted = startSetlist;
+        triviaStarted = startTrivia;
         twitterStream.user();
         long showStart = -2;
         while (!kill) {
             showStart = showCheck(showStart);
+            if (triggerUsername != null && triggerResponse != null) {
+                TwitterUtil twitterUtil = TwitterUtil.instance();
+                twitterUtil.sendDirectMessage(gameTweetConfig, triggerUsername,
+                        triggerResponse);
+                triggerUsername = null;
+                triggerResponse = null;
+            }
             if (triviaStarted) {
-                String lastScores = fileUtil.readStringFromFile(
+                HashMap<Object, Object> lastScores = gameUtil.readScores(
                         lastTriviaScoresFile);
                 if (lastScores == null) {
-                    lastScores = "";
+                    lastScores = new HashMap<>();
                 }
                 trivia.setScoresFile(lastTriviaScoresFile, lastScores);
                 trivia.startTrivia(doWarning,
@@ -288,9 +300,6 @@ public class DmbTrivia {
                 triviaStarted = false;
             }
             else if (setlistStarted) {
-                if (setlist.getDurationHours() != 0) {
-                    setlist.setScoresFile(lastSetlistScoresFile);
-                }
                 setlist.startSetlist(files);
                 setlistStarted = false;
             }
@@ -298,13 +307,6 @@ public class DmbTrivia {
                 TimeUnit.SECONDS.sleep(10);
             } catch (InterruptedException e) {
                 logger.error("Sleep interrupted!", e);
-            }
-            if (triggerUsername != null && triggerResponse != null) {
-                TwitterUtil twitterUtil = TwitterUtil.instance();
-                twitterUtil.sendDirectMessage(gameTweetConfig, triggerUsername,
-                        triggerResponse);
-                triggerUsername = null;
-                triggerResponse = null;
             }
         }
         twitterStream.cleanUp();
