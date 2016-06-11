@@ -6,8 +6,7 @@ import junit.framework.TestCase;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
+import java.util.*;
 
 public class DmbTriviaTest extends TestCase {
 
@@ -25,6 +24,7 @@ public class DmbTriviaTest extends TestCase {
     private Setlist setlist;
 
     private final String TEST_RESOURCES_SET = "src/test/resources/set/";
+    private final String TEST_RESOURCES_BELA_SET = "src/test/resources/bela/";
     private final String TEST_RESOURCES = "src/test/resources/";
     private final String TEST_JPG = TEST_RESOURCES + "setlist.jpg";
     private final String TEST_FONT = TEST_RESOURCES + "roboto.ttf";
@@ -60,8 +60,8 @@ public class DmbTriviaTest extends TestCase {
                 .format(new Date());
         /*
         dmbTrivia.startListening(files, true, false, "lastTriviaScores" + date +
-                ".ser", "lastSetlistScores" + date + ".ser");
-        */
+                ".ser", DmbTrivia.createSetlistScoresFile());
+                */
     }
 
     public void testDmbTriviaGame() {
@@ -74,19 +74,24 @@ public class DmbTriviaTest extends TestCase {
     }
 
     public void testGetShowStart() {
-        /*
         Calendar cal = new GregorianCalendar(2014, 7, 31, 0, 0, 0);
         assertEquals("Show start incorrect!", 1409536800000l,
-                dmbTrivia.getShowStart(cal.getTime(), 2014));
+                dmbTrivia.getShowStart(cal.getTime()));
         cal.set(2014, 6, 5);
         assertEquals("Show start incorrect!", 1404604800000l,
-                dmbTrivia.getShowStart(cal.getTime(), 2014));
-        */
+                dmbTrivia.getShowStart(cal.getTime()));
+        cal.set(2015, 9, 12);
+        assertEquals("Show start incorrect!", 1444669200000l,
+                dmbTrivia.getShowStart(cal.getTime()));
     }
 
     public void testShowCheck() {
-        //assertEquals("Show start doesn't match!", -1, dmbTrivia.showCheck(-2));
-        assertEquals("Show start doesn't match!", -1, dmbTrivia.showCheck(-1));
+        //assertEquals("Show start doesn't match!", -1, dmbTrivia.showCheck(-2, null));
+        Calendar calendar = new GregorianCalendar(TimeZone.getTimeZone("UTC"));
+        calendar.set(2000, Calendar.AUGUST, 6, 19, 0, 0);
+        calendar.set(Calendar.MILLISECOND, 1);
+        assertEquals("Show start doesn't match!", 965613600000l,
+                dmbTrivia.showCheck(-1, calendar.getTime()));
     }
 
     public void testXLong() {
