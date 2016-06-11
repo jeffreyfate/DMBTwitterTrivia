@@ -1,12 +1,10 @@
 package com.jeffthefate;
 
 import com.jeffthefate.setlist.Setlist;
-import com.jeffthefate.utils.CredentialUtil;
-import com.jeffthefate.utils.GameUtil;
-import com.jeffthefate.utils.Parse;
-import com.jeffthefate.utils.TwitterUtil;
-import com.jeffthefate.utils.json.Credential;
+import com.jeffthefate.utils.*;
 import com.jeffthefate.utils.json.JsonUtil;
+import com.jeffthefate.utils.json.geocoding.LatLon;
+import com.jeffthefate.utils.json.parse.Credential;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.DailyRollingFileAppender;
 import org.apache.log4j.Level;
@@ -15,16 +13,14 @@ import org.apache.log4j.PatternLayout;
 import twitter4j.*;
 import twitter4j.conf.Configuration;
 
+import java.security.InvalidParameterException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Hello world!
- * 
- */
 public class DmbTrivia {
 
 	private TwitterStream twitterStream;
@@ -38,35 +34,24 @@ public class DmbTrivia {
     private static String triggerUsername = null;
     private static String triggerResponse = null;
     private static boolean kill = false;
+    private static int showStartHour = 20;
+    private static boolean getShowStart = false;
 
-    private static Logger logger;
+    private GameUtil gameUtil = GameUtil.instance();
+    private DmbAlmanacUtil dmbAlmanacUtil = DmbAlmanacUtil.instance();
+    private GeocodingUtil geocodingUtil = GeocodingUtil.instance();
+    private TimeZoneUtil timeZoneUtil = TimeZoneUtil.instance();
+
+    private static Logger logger = Logger.getLogger(DmbTrivia.class);
 
 	public static void main(String args[]) {
-		// creates pattern layout
-        PatternLayout layout = new PatternLayout();
-        String conversionPattern = "[%p] %d %c %M - %m%n";
-        layout.setConversionPattern(conversionPattern);
- 
-        // creates daily rolling file appender
-        DailyRollingFileAppender rollingAppender =
-        		new DailyRollingFileAppender();
-        rollingAppender.setFile("/home/dmb.log");
-        rollingAppender.setDatePattern("'.'yyyy-MM-dd");
-        rollingAppender.setLayout(layout);
-        rollingAppender.activateOptions();
- 
-        // configures the root logger
-        Logger rootLogger = Logger.getRootLogger();
-        rootLogger.setLevel(Level.DEBUG);
-        rootLogger.addAppender(rollingAppender);
- 
-        // creates a custom logger and log messages
-        logger = Logger.getLogger(DmbTrivia.class);
-		logger.info("Setting up DMB apps...");
-
 		DmbTrivia dmbTrivia = new DmbTrivia(false, false,
-                "/home/parseCreds.ser");
-		dmbTrivia.startListening(null, false);
+                "/home/jeff/dmb-trivia/parseCreds.ser", "/home/jeff/dmb-trivia/dmb.log");
+        String triviaDate = new SimpleDateFormat("yyyy-MM-dd-HH")
+                .format(new Date());
+		dmbTrivia.startListening(null, false, false,
+                "/home/jeff/dmb-trivia/lastTriviaScores" + triviaDate + ".ser",
+                createSetlistScoresFile());
 	}
 
     public Setlist getSetlist() {
@@ -77,20 +62,48 @@ public class DmbTrivia {
         DmbTrivia.setlist = setlist;
     }
 
+    public static Trivia getTrivia() { return trivia; }
+
+    public static void setTrivia(Trivia trivia) { DmbTrivia.trivia = trivia; }
+
     public DmbTrivia(boolean isTwitterDev, boolean isParseDev,
-            String credsFile) {
+            String credsFile, String logFile) {
+        // creates pattern layout
+        PatternLayout layout = new PatternLayout();
+        String conversionPattern = "[%p] %d %c %M - %m%n";
+        layout.setConversionPattern(conversionPattern);
+
+        // creates daily rolling file appender
+        DailyRollingFileAppender rollingAppender =
+                new DailyRollingFileAppender();
+        rollingAppender.setFile(logFile);
+        rollingAppender.setDatePattern("'.'yyyy-MM-dd");
+        rollingAppender.setLayout(layout);
+        rollingAppender.activateOptions();
+
+        // configures the root logger
+        Logger rootLogger = Logger.getRootLogger();
+        rootLogger.setLevel(Level.ALL);
+        rootLogger.addAppender(rollingAppender);
+
+        // creates a custom logger and log messages
+        logger = Logger.getLogger(DmbTrivia.class);
+        logger.info("Setting up DMB apps...");
         // Setup to start
         GameUtil gameUtil = GameUtil.instance();
         int questionCount = 34;
         int bonusCount = 6;
         int lightningCount = 6;
-        ArrayList<ArrayList<String>> answerList = gameUtil.setupAnswerList();
-        HashMap<String, String> acronymMap = gameUtil.createAcronymMap();
-        ArrayList<String> replaceList = gameUtil.createReplaceList();
-        ArrayList<String> tipList = gameUtil.createTipList();
+        ArrayList<ArrayList<String>> answerList = gameUtil.setupAnswerList(
+                isParseDev, credsFile);
+        ArrayList<String> replaceList = gameUtil.createReplaceList(isParseDev,
+                credsFile);
+        ArrayList<String> tipList = gameUtil.createTipList(isParseDev,
+                credsFile, "TriviaTip");
         ArrayList<ArrayList<String>> songList = gameUtil
-                .generateSongMatchList();
-        ArrayList<String> symbolList = gameUtil.generateSymbolList();
+                .generateSongMatchList(isParseDev, credsFile);
+        ArrayList<String> symbolList = gameUtil.generateSymbolList(isParseDev,
+                credsFile);
         CredentialUtil credentialUtil = CredentialUtil.instance();
         Parse parse = credentialUtil.getCredentialedParse(isParseDev,
                 credsFile);
@@ -105,11 +118,10 @@ public class DmbTrivia {
             logger.info("twitter dev: " + isTwitterDev);
             logger.info("parse dev: " + isParseDev);
         }
-        final String SETLIST_JPG_FILENAME = "/home/setlist.jpg";
-        final String FONT_FILENAME = "/home/roboto.ttf";
-        final String BAN_FILE = "/home/banlist.ser";
-        final String SCORES_FILE = "/home/scores.ser";
-        final String SCREENSHOT_FILENAME = "/home/TEMP/scores";
+        final String SETLIST_JPG_FILENAME = "/home/jeff/dmb-trivia/setlist.jpg";
+        final String FONT_FILENAME = "/home/jeff/dmb-trivia/roboto.ttf";
+        final String BAN_FILE = "/home/jeff/dmb-trivia/banlist.ser";
+        final String SCREENSHOT_FILENAME = "/home/jeff/dmb-trivia/TEMP/scores";
         final String PRE_TEXT = "[DMB Trivia] ";
         final String LEADERS_TITLE = "Top Scores";
 
@@ -119,18 +131,19 @@ public class DmbTrivia {
         final int LEADERS_LIMIT = 10;
         final int SCORES_TOP_OFFSET = 160;
         final int SCORES_BOTTOM_OFFSET = 80;
+        final String TRIVIA_SCORES_FILE = "/home/jeff/dmb-trivia/triviaScores.ser";
         trivia = new Trivia(SETLIST_JPG_FILENAME, FONT_FILENAME,
                 LEADERS_TITLE, TRIVIA_MAIN_FONT_SIZE, TRIVIA_DATE_FONT_SIZE,
                 LEADERS_LIMIT, SCORES_TOP_OFFSET, SCORES_BOTTOM_OFFSET,
                 gameTweetConfig, questionCount, bonusCount, answerList,
-                acronymMap, replaceList, tipList, isTwitterDev, PRE_TEXT,
-                lightningCount, SCREENSHOT_FILENAME, parse);
+                replaceList, tipList, isTwitterDev, PRE_TEXT, lightningCount,
+                SCREENSHOT_FILENAME, parse, TRIVIA_SCORES_FILE);
         final int SETLIST_FONT_SIZE = 25;
         final int SETLIST_TOP_OFFSET = 120;
         final int SETLIST_BOTTOM_OFFSET = 20;
-        final String SETLIST_DIR = "/home/SETLISTS/";
+        final String SETLIST_DIR = "/home/jeff/dmb-trivia/SETLISTS/";
         final String SETLIST_FILENAME = SETLIST_DIR + "setlist";
-        final String LAST_SONG_DIR = "/home/LAST_SONGS/";
+        final String LAST_SONG_DIR = "/home/jeff/dmb-trivia/LAST_SONGS/";
         final String LAST_SONG_FILENAME = LAST_SONG_DIR + "last_song";
         JsonUtil jsonUtil = JsonUtil.instance();
         List<Credential> credentialList = jsonUtil.getCredentialResults(
@@ -144,14 +157,14 @@ public class DmbTrivia {
             }
         }
         setlist = new Setlist(null, isTwitterDev,
-                credentialUtil.getCredentialedTwitter(parse, false),
-                gameTweetConfig, SETLIST_JPG_FILENAME, FONT_FILENAME,
+                credentialUtil.getCredentialedTwitter(parse, false), gameTweetConfig,
+                credentialUtil.getCredentialedFacebook(parse), SETLIST_JPG_FILENAME, FONT_FILENAME,
                 SETLIST_FONT_SIZE, SETLIST_TOP_OFFSET, SETLIST_BOTTOM_OFFSET,
                 GAME_TITLE, TRIVIA_MAIN_FONT_SIZE, TRIVIA_DATE_FONT_SIZE,
                 SCORES_TOP_OFFSET, SCORES_BOTTOM_OFFSET, LEADERS_LIMIT,
                 SETLIST_FILENAME, LAST_SONG_FILENAME, SETLIST_DIR, BAN_FILE,
-                SCORES_FILE, songList, symbolList, GAME_ACCOUNT, parse,
-                "setlist", "scores");
+                createSetlistScoresFile(), songList, symbolList, GAME_ACCOUNT,
+                parse, "setlist", "scores");
         twitterStream = new TwitterStreamFactory(gameTweetConfig).getInstance();
         twitterStream.addRateLimitStatusListener(new RateLimitStatusListener() {
             public void onRateLimitReached(RateLimitStatusEvent event) {
@@ -183,21 +196,182 @@ public class DmbTrivia {
         twitterStream.addListener(streamListener);
     }
 
-    public void startListening(ArrayList<String> files, boolean startSetlist) {
+    /**
+     * Get the show start time, given the current date
+     *
+     * @param now current date, or the given date to check
+     * @return
+     */
+    public long getShowStart(Date now) {
+        logger.info("getShowStart: " + now.toString());
+        // Fetch the location from dmbalmanac
+        String nowString = dmbAlmanacUtil.convertDateToAlmanacFormat(now);
+        Calendar calendar = new GregorianCalendar(TimeZone.getTimeZone("UTC"));
+        calendar.setTimeInMillis(now.getTime());
+        String showCity = dmbAlmanacUtil.getShowCity(nowString,
+                Integer.toString(calendar.get(Calendar.YEAR)));
+        if (showCity.contains("ESP")) {
+            showCity = showCity.replace("ESP", "ES");
+        }
+        if (showCity.contains("ITA")) {
+            showCity = showCity.replace("ITA", "IT");
+        }
+        if (showCity.contains("BEL")) {
+            showCity = showCity.replace("BEL", "Belgium");
+        }
+        if (showCity.contains("IRL")) {
+            showCity = showCity.replace("IRL", "Ireland");
+        }
+        // Get the exact location coordinates
+        LatLon latLon = geocodingUtil.getCityLatLon(showCity);
+        long offset;
+        // Find the time zone offset
+        try {
+            offset = timeZoneUtil.getTimeOffset(latLon);
+        } catch (InvalidParameterException e) {
+            logger.error("Couldn't determine time zone offset!", e);
+            return -1;
+        }
+        // Set the time to when show start is
+        Calendar showTime = new GregorianCalendar(TimeZone.getTimeZone("UTC"));
+        showTime.setTimeInMillis(now.getTime());
+        logger.info("getShowStart showStartHour: " + showStartHour);
+        showTime.set(Calendar.HOUR_OF_DAY, showStartHour);
+        showTime.set(Calendar.MINUTE, 0);
+        showTime.set(Calendar.SECOND, 0);
+        showTime.set(Calendar.MILLISECOND, 0);
+        TwitterUtil.instance().sendDirectMessage(gameTweetConfig, "jeffthefate",
+                "Show today scheduled for " + new SimpleDateFormat("HHmm z")
+                        .format(new Date(showTime.getTimeInMillis() -
+                                (offset * 1000))));
+        // Change it for the show time zone
+        return showTime.getTimeInMillis() - (offset * 1000);
+    }
+
+    /**
+     * <p>
+     *     Check to see if there is a show in the next 24 hours and setup the
+     *     start time.
+     * </p>
+     * <p>
+     *     If either it just started listening (server restart) or it is on the
+     *     hour, check dmbalmanac.com to see if there is a show in the next 24
+     *     hours. If so, fetch the show start time.
+     * </p>
+     * <p>
+     *     Checking for the setlist and listening for setlist game tweets
+     *     starts if it is 30 minutes before show start time. Otherwise,
+     *     checking starts on the hour, every hour for the Show Begins. Show
+     *     length defaults to 6 hours and starts at 2000 local time. So,
+     *     watching for the setlist starts at 1930 local time, by default.
+     * </p>
+     * @param showStart starting point for checking; -2 indicates it is checking
+     *                  for the first time; -1 indicates no show is scheduled;
+     *                  any other number represents the next show start time, in
+     *                  milliseconds since epoch
+     * @return the current start time state; one of the above states
+     */
+    public long showCheck(long showStart, Date now) {
+        if (now == null) {
+            now = new Date();
+        }
+        // When there isn't a setlist going on now
+        // AND
+        // There isn't one already found for today
+        // AND
+        // It is on the hour
+        // OR
+        // The server has just be restarted
+        // THEN
+        // Check for a show happening in the next 24 hours and get start time
+        if ((!setlistStarted && showStart < 0 &&
+                now.getTime() % 3600000 < 15000) || showStart == -2) {
+            logger.info("On the hour, so checking for show");
+            // Check with dmbalmanac
+            logger.info("showStartHour: " + showStartHour);
+            logger.info("now: " + now.toString());
+            boolean showIn24Hours = dmbAlmanacUtil.isThereAShowIn24Hours(
+                    showStartHour, now);
+            logger.info("showIn24Hours: " + showIn24Hours);
+            // Check for the show start time if there is one
+            if (showIn24Hours) {
+                showStart = getShowStart(now);
+            }
+            // Send update via twitter and indicate no more checking is
+            // required
+            else {
+                showStart = -1;
+                // Make sure we don't check again during this time frame
+                try {
+                    TimeUnit.SECONDS.sleep(10);
+                } catch (InterruptedException e) {
+                    logger.error("Sleep interrupted!", e);
+                }
+            }
+        }
+
+        logger.info("getShowStart: " + getShowStart);
+        // Force getting the show start time
+        if (getShowStart) {
+            showStart = getShowStart(now);
+            getShowStart = false;
+        }
+        logger.info("showStart: " + showStart);
+        // There is a show found for today
+        if (showStart >= 0) {
+            logger.info("now: " + now.getTime());
+            // TODO Make the 30 minutes dynamic
+            // TODO Make the set length dynamic
+            // We're right at 30 minutes before show time
+            if (now.getTime() >= showStart - 1800000) {
+                logger.info("Starting setlist for 6 hours");
+                setlist.setDuration(6);
+                setlistStarted = true;
+                showStart = -1;
+            }
+            // It is on the hour, so checking for show message
+            else if (now.getTime() % 3600000 < 15000) {
+                logger.info("Starting setlist for 0 hours");
+                setlist.setDuration(0);
+                setlistStarted = true;
+            }
+        }
+        return showStart;
+    }
+
+    public void startListening(ArrayList<String> files, boolean startSetlist,
+            boolean startTrivia, String lastTriviaScoresFile, String lastSetlistScoresFile) {
         final int PRE_SHOW_MINUTES = 15;
         final int PRE_SHOW_TIME = (PRE_SHOW_MINUTES * 60 * 1000);
         final String PRE_SHOW_PRE_TEXT = "[#DMB Trivia] ";
         final String PRE_SHOW_TEXT = "Game starts on @dmbtrivia2 in " +
                 PRE_SHOW_MINUTES + " minutes";
         setlistStarted = startSetlist;
+        triviaStarted = startTrivia;
         twitterStream.user();
+        long showStart = -2;
         while (!kill) {
+            showStart = showCheck(showStart, null);
+            if (triggerUsername != null && triggerResponse != null) {
+                TwitterUtil twitterUtil = TwitterUtil.instance();
+                twitterUtil.sendDirectMessage(gameTweetConfig, triggerUsername,
+                        triggerResponse);
+                triggerUsername = null;
+                triggerResponse = null;
+            }
             if (triviaStarted) {
+                HashMap<Object, Object> lastScores = gameUtil.readScores(
+                        lastTriviaScoresFile);
+                if (lastScores == null) {
+                    lastScores = new HashMap<>();
+                }
+                trivia.setScoresFile(lastTriviaScoresFile, lastScores);
                 trivia.startTrivia(doWarning,
                         PRE_SHOW_PRE_TEXT + PRE_SHOW_TEXT, PRE_SHOW_TIME);
                 triviaStarted = false;
             }
             else if (setlistStarted) {
+                setlist.setScoresFile(createSetlistScoresFile());
                 setlist.startSetlist(files);
                 setlistStarted = false;
             }
@@ -206,18 +380,34 @@ public class DmbTrivia {
             } catch (InterruptedException e) {
                 logger.error("Sleep interrupted!", e);
             }
-            if (triggerUsername != null && triggerResponse != null) {
-                TwitterUtil twitterUtil = TwitterUtil.instance();
-                twitterUtil.sendDirectMessage(gameTweetConfig, triggerUsername,
-                        triggerResponse);
-                triggerUsername = null;
-                triggerResponse = null;
-            }
         }
         twitterStream.cleanUp();
         twitterStream.shutdown();
     }
 
+    /**
+     * <p>
+     * Handles receiving new tweet's in the Twitter stream. When either a new status or direct message
+     * is received, processes it and takes action on it accordingly.
+     * </p>
+     * <p>
+     * Direct messages that trigger actions:
+     * <ul>
+     * <li>start trivia [skip] {QUESTION COUNT} {LIGHTNING COUNT} {BONUS COUNT}</li>
+     * <li>start setlist {HOURS} [test]</li>
+     * <li>end setlist</li>
+     * <li>kill</li>
+     * <li>ban {TWITTER HANDLE}</li>
+     * <li>unban {TWITTER HANDLE}</li>
+     * <li>current scores [image]</li>
+     * <li>final scores [image]</li>
+     * <li>start time {LOCAL HOUR}</li>
+     * </ul>
+     * </p>
+     *
+     * Status messages are passed down to the {@link com.jeffthefate.setlist.Setlist} and
+     * {@link com.jeffthefate.Trivia} objects for processing.
+     */
 	static UserStreamListener streamListener = new UserStreamListener() {
 		public void onDirectMessage(DirectMessage dm) {
 			String dmText = dm.getText();
@@ -279,6 +469,7 @@ public class DmbTrivia {
 								return;
 							}
 						}
+                        // TODO make dynamic
 						// Default to 5 hours for now
 						setlist.setDuration(5);
 						if (countList.size() == 1) {
@@ -287,12 +478,7 @@ public class DmbTrivia {
 					}
                     if (dmText.contains("test")) {
                         setlist.setDuration(0);
-                        setlist.setUrl("/home/test2014-06-20.txt");
-                    }
-                    if (setlist.getDurationHours() != 0) {
-                        String date = new SimpleDateFormat("yyyy-MM-dd")
-                                .format(new Date());
-                        setlist.setScoresFile("/home/scores" + date + ".ser");
+                        setlist.setUrl("/home/jeff/dmb-trivia/test2014-06-20.txt");
                     }
 					triggerResponse = "Command received! Starting setlist: "
 							+ setlist.getDurationHours() + " hours";
@@ -316,12 +502,42 @@ public class DmbTrivia {
 						setlist.postSetlistScoresText(true);
 					}
 				} else if (massagedText.contains("current scores")) {
-					if (massagedText.contains("image")) {
-						setlist.postSetlistScoresImage(false);
-					}
-					else {
-						setlist.postSetlistScoresText(false);
-					}
+                    if (massagedText.contains("image")) {
+                        setlist.postSetlistScoresImage(false);
+                    } else {
+                        setlist.postSetlistScoresText(false);
+                    }
+                } else if (massagedText.contains("start time")) {
+                    // Grab the start time hour
+                    if (dmText.matches(".*\\d.*")) {
+                        String temp;
+                        ArrayList<Integer> countList = new ArrayList<Integer>(0);
+                        Pattern p = Pattern.compile("\\d+");
+                        Matcher m = p.matcher(dmText);
+                        while (m.find()) {
+                            temp = m.group();
+                            try {
+                                countList.add(Integer.parseInt(temp));
+                            } catch (NumberFormatException e) {
+                                e.printStackTrace();
+                                return;
+                            }
+                        }
+                        if (countList.size() == 1) {
+                            if (countList.get(0) < 12) {
+                                showStartHour = countList.get(0) + 12;
+                            }
+                            else {
+                                showStartHour = countList.get(0);
+                            }
+                        }
+                    }
+                    else {
+                        showStartHour = 20;
+                    }
+                    logger.info("showStartHour: " + showStartHour);
+                    // Toggle boolean to recalculate start time
+                    getShowStart = true;
 				} else if (!massagedText.contains("end setlist") &&
 						!massagedText.contains("final scores") &&
 						!massagedText.contains("current scores")) {
@@ -335,15 +551,6 @@ public class DmbTrivia {
 			}
 		}
 
-		public void onDeletionNotice(StatusDeletionNotice arg0) {
-		}
-
-		public void onScrubGeo(long arg0, long arg1) {
-		}
-
-		public void onStallWarning(StallWarning arg0) {
-		}
-
 		public void onStatus(Status status) {
             if (logger != null) {
                 logger.info("onStatus:");
@@ -354,6 +561,9 @@ public class DmbTrivia {
 			setlist.processTweet(status);
 		}
 
+        public void onDeletionNotice(StatusDeletionNotice arg0) {}
+        public void onScrubGeo(long arg0, long arg1) {}
+        public void onStallWarning(StallWarning arg0) {}
 		public void onTrackLimitationNotice(int arg0) {}
 		public void onException(Exception arg0) {}
 		public void onBlock(User arg0, User arg1) {}
@@ -373,5 +583,11 @@ public class DmbTrivia {
 		public void onUserListUpdate(User arg0, UserList arg1) {}
         public void onUserProfileUpdate(User arg0) {}
 	};
+
+    public static String createSetlistScoresFile() {
+        String setlistDate = new SimpleDateFormat("yyyy-MM-dd")
+                .format(new Date());
+        return "/home/jeff/dmb-trivia/lastSetlistScores" + setlistDate + ".ser";
+    }
 
 }
